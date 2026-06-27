@@ -76,17 +76,22 @@ breaks `dpkg`).
 
 ```elixir
 tar = Debkit.Tar.write!([
-  {"./control", "Package: hello\n"},        # mode defaults to 0o644
-  {"./postinst", "#!/bin/sh\n", 0o755}
+  {:dir, "./usr/", 0o755},                  # directory entry (ustar typeflag 5)
+  {:dir, "./usr/bin/"},                      # mode defaults to 0o755
+  {"./control", "Package: hello\n"},        # file; mode defaults to 0o644
+  {"./usr/bin/hello", "#!/bin/sh\n", 0o755}
 ])
 
 {:ok, entries} = Debkit.Tar.read(tar)
-# [{"./control", "Package: hello\n"}, {"./postinst", "#!/bin/sh\n"}]
+# [{"./control", "Package: hello\n"}, {"./usr/bin/hello", "#!/bin/sh\n"}]
 ```
 
-Names are stored **verbatim**, including a leading `./` (the `.deb` convention)
-— unlike most tar writers, which normalise `.` components away. `read/1` returns
-regular-file entries; directories, symlinks and the like are skipped.
+Write either files (`{name, contents}` / `{name, contents, mode}`) or directories
+(`{:dir, name}` / `{:dir, name, mode}`) — a `.deb`'s `data.tar` lists an explicit
+directory entry for each parent dir. Names are stored **verbatim**, including a
+leading `./` and a directory's trailing `/` — unlike most tar writers, which
+normalise `.` components away. `read/1` returns regular-file entries only;
+directories, symlinks and the like are skipped.
 
 ### Putting it together
 

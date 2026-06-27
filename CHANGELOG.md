@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `Debkit.Tar.write/1` now writes **directory entries** (ustar typeflag `5`) via
+  `{:dir, name}` / `{:dir, name, mode}` tuples, alongside the existing file
+  forms. This is what a `.deb`'s `data.tar` lists for each parent directory.
+  Names are stored verbatim (keep the trailing `/`). ([#1])
+
+[#1]: https://github.com/jtippett/debkit/issues/1
+
 ## 0.1.1 - 2026-06-27
 
 ### Added

@@ -35,6 +35,14 @@ enum Format {
     Zstd,
 }
 
+/// A tar entry's kind, decoded from the `:file | :dir` atom the Elixir side
+/// tags each entry with.
+#[derive(NifUnitEnum)]
+enum EntryKind {
+    File,
+    Dir,
+}
+
 /// ar member identifiers must fit the 16-byte header field. Every name a `.deb`
 /// uses is far shorter; reject anything longer rather than silently corrupt.
 const AR_NAME_MAX: usize = 16;
@@ -163,13 +171,22 @@ fn tar_read<'a>(env: Env<'a>, data: Binary<'a>) -> Result<Vec<(String, Binary<'a
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn tar_write<'a>(env: Env<'a>, entries: Vec<(String, Binary, u32)>) -> Result<Binary<'a>, Atom> {
+fn tar_write<'a>(
+    env: Env<'a>,
+    entries: Vec<(String, Binary, u32, EntryKind)>,
+) -> Result<Binary<'a>, Atom> {
     let mut builder = tar::Builder::new(Vec::new());
 
-    for (name, contents, mode) in &entries {
+    for (name, contents, mode, kind) in &entries {
+        // A directory carries no data; ignore any contents and write size 0.
+        let (entry_type, body): (tar::EntryType, &[u8]) = match kind {
+            EntryKind::File => (tar::EntryType::Regular, contents.as_slice()),
+            EntryKind::Dir => (tar::EntryType::Directory, &[]),
+        };
+
         let mut header = tar::Header::new_ustar();
-        header.set_entry_type(tar::EntryType::Regular);
-        header.set_size(contents.as_slice().len() as u64);
+        header.set_entry_type(entry_type);
+        header.set_size(body.len() as u64);
         header.set_mode(*mode);
         // Deterministic ownership/time for reproducible archives.
         header.set_mtime(0);
@@ -180,11 +197,12 @@ fn tar_write<'a>(env: Env<'a>, entries: Vec<(String, Binary, u32)>) -> Result<Bi
         // components, which would turn a `.deb`-style "./control" into
         // "control"; we want exact round-tripping, so fill the ustar name (and
         // prefix, for long paths) fields ourselves, then checksum and append.
+        // Directory names keep their trailing `/` for the same reason.
         set_ustar_name(&mut header, name)?;
         header.set_cksum();
 
         builder
-            .append(&header, contents.as_slice())
+            .append(&header, body)
             .map_err(|_| atoms::corrupt())?;
     }
 

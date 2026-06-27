@@ -64,6 +64,41 @@ defmodule Debkit.DpkgInteropTest do
         File.rm(path)
       end
     end
+
+    test "directory entries are listed as directories with their modes (issue #1)" do
+      control =
+        "Package: debkit-dirs\nVersion: 0.1.0\nArchitecture: all\nMaintainer: x <x@x>\nDescription: dirs\n"
+
+      data_tar =
+        Tar.write!([
+          {:dir, "./usr/", 0o755},
+          {:dir, "./usr/bin/", 0o755},
+          {:dir, "./etc/", 0o700},
+          {"./usr/bin/debkit-dirs", "#!/bin/sh\n", 0o755}
+        ])
+
+      deb =
+        Ar.write!([
+          {"debian-binary", "2.0\n"},
+          {"control.tar.gz", Debkit.compress!(:gzip, Tar.write!([{"./control", control}]))},
+          {"data.tar.gz", Debkit.compress!(:gzip, data_tar)}
+        ])
+
+      path = Path.join(System.tmp_dir!(), "debkit-dirs-#{System.unique_integer([:positive])}.deb")
+      File.write!(path, deb)
+
+      try do
+        assert {listing, 0} = System.cmd("dpkg-deb", ["-c", path])
+        # dpkg renders directories with a leading 'd' and the mode we set
+        assert listing =~ ~r{drwxr-xr-x[^\n]*\./usr/}
+        assert listing =~ ~r{drwxr-xr-x[^\n]*\./usr/bin/}
+        assert listing =~ ~r{drwx------[^\n]*\./etc/}
+        # the regular file is still a file
+        assert listing =~ ~r{-rwxr-xr-x[^\n]*\./usr/bin/debkit-dirs}
+      after
+        File.rm(path)
+      end
+    end
   end
 
   describe "Debkit reads real dpkg/aptly-built .debs" do

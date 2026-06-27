@@ -34,17 +34,28 @@ defmodule Debkit.Tar do
   alias Debkit.Native
 
   @default_mode 0o644
+  @default_dir_mode 0o755
 
   @typedoc "An entry read from an archive: its name and contents."
   @type entry :: {name :: String.t(), contents :: binary()}
 
   @typedoc """
-  An entry to write. The 2-tuple form defaults the file mode to `0o644`; the
-  3-tuple form sets it explicitly.
+  An entry to write:
+
+    * `{name, contents}` — a regular file (mode defaults to `0o644`)
+    * `{name, contents, mode}` — a regular file with an explicit mode
+    * `{:dir, name}` — a directory (mode defaults to `0o755`)
+    * `{:dir, name, mode}` — a directory with an explicit mode
+
+  Directory names are stored verbatim, so include the trailing `/` and any
+  leading `./` yourself — e.g. `{:dir, "./usr/bin/", 0o755}` — matching the
+  `.deb` convention.
   """
   @type write_entry ::
           {name :: String.t(), contents :: binary()}
           | {name :: String.t(), contents :: binary(), mode :: non_neg_integer()}
+          | {:dir, name :: String.t()}
+          | {:dir, name :: String.t(), mode :: non_neg_integer()}
 
   @doc """
   Reads a tar archive into its regular-file entries, in archive order.
@@ -67,12 +78,25 @@ defmodule Debkit.Tar do
   @doc """
   Writes entries to a deterministic ustar archive.
 
-  Each entry is `{name, contents}` (mode defaults to `0o644`) or
-  `{name, contents, mode}`. Entries are written in the order given.
+  Entries are written in the order given. Each is a regular file
+  (`{name, contents}` or `{name, contents, mode}`) or a directory
+  (`{:dir, name}` or `{:dir, name, mode}`). See `t:write_entry/0`.
+
+  Directory entries (ustar typeflag `5`) are what a `.deb`'s `data.tar`
+  conventionally lists for each parent directory; emit them explicitly, in order,
+  before the files they contain.
 
   ## Examples
 
       iex> {:ok, tar} = Debkit.Tar.write([{"./control", "Package: hello\\n", 0o644}])
+      iex> is_binary(tar)
+      true
+
+      iex> {:ok, tar} = Debkit.Tar.write([
+      ...>   {:dir, "./usr/", 0o755},
+      ...>   {:dir, "./usr/bin/", 0o755},
+      ...>   {"./usr/bin/hello", "#!/bin/sh\\n", 0o755}
+      ...> ])
       iex> is_binary(tar)
       true
   """
@@ -87,12 +111,20 @@ defmodule Debkit.Tar do
   @spec write!([write_entry()]) :: binary()
   def write!(entries), do: Debkit.unwrap(write(entries), :"Tar.write")
 
-  # The NIF takes a uniform {name, bytes, mode} triple; default the mode here so
-  # the common case stays a 2-tuple.
+  # The NIF takes a uniform {name, contents, mode, kind} tuple; default the mode
+  # and tag the kind here so the common cases stay short tuples. A directory has
+  # no contents, so it carries an empty body.
+  defp normalize({:dir, name}) when is_binary(name),
+    do: {name, "", @default_dir_mode, :dir}
+
+  defp normalize({:dir, name, mode})
+       when is_binary(name) and is_integer(mode) and mode >= 0,
+       do: {name, "", mode, :dir}
+
   defp normalize({name, contents}) when is_binary(name) and is_binary(contents),
-    do: {name, contents, @default_mode}
+    do: {name, contents, @default_mode, :file}
 
   defp normalize({name, contents, mode})
        when is_binary(name) and is_binary(contents) and is_integer(mode) and mode >= 0,
-       do: {name, contents, mode}
+       do: {name, contents, mode, :file}
 end

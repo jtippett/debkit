@@ -53,4 +53,57 @@ defmodule Debkit.TarTest do
     assert Tar.read!(tar) == [{"./x", "hi"}]
     assert_raise Debkit.Error, fn -> Tar.read!(String.duplicate("garbage block!!!", 50)) end
   end
+
+  describe "directory entries" do
+    # ustar typeflag lives at offset 156 of each 512-byte header; '5' is a directory.
+    defp typeflag(tar, header_index), do: binary_part(tar, header_index * 512 + 156, 1)
+
+    defp stored_name(tar, header_index) do
+      tar
+      |> binary_part(header_index * 512, 100)
+      |> :binary.bin_to_list()
+      |> Enum.take_while(&(&1 != 0))
+      |> List.to_string()
+    end
+
+    test "{:dir, name, mode} writes a directory entry (typeflag '5')" do
+      assert {:ok, tar} = Tar.write([{:dir, "./usr/bin/", 0o755}])
+      assert typeflag(tar, 0) == "5"
+      assert stored_name(tar, 0) == "./usr/bin/"
+    end
+
+    test "{:dir, name} defaults the mode to 0o755" do
+      assert {:ok, tar} = Tar.write([{:dir, "./usr/"}])
+      assert typeflag(tar, 0) == "5"
+      # mode field (offset 100, 8 bytes, octal ascii) encodes 0o755
+      assert binary_part(tar, 100, 8) =~ "755"
+    end
+
+    test "directory and file entries interleave in order" do
+      entries = [
+        {:dir, "./usr/", 0o755},
+        {:dir, "./usr/bin/", 0o755},
+        {"./usr/bin/hello", "#!/bin/sh\n", 0o755}
+      ]
+
+      assert {:ok, tar} = Tar.write(entries)
+      assert typeflag(tar, 0) == "5"
+      assert typeflag(tar, 1) == "5"
+      assert typeflag(tar, 2) == "0"
+      assert stored_name(tar, 1) == "./usr/bin/"
+      assert stored_name(tar, 2) == "./usr/bin/hello"
+    end
+
+    test "writing directory entries stays deterministic" do
+      entries = [{:dir, "./usr/", 0o755}, {"./usr/x", "data"}]
+      assert {:ok, a} = Tar.write(entries)
+      assert {:ok, b} = Tar.write(entries)
+      assert a == b
+    end
+
+    test "read/1 still returns regular files only, skipping directories" do
+      tar = Tar.write!([{:dir, "./usr/", 0o755}, {"./usr/x", "data"}])
+      assert {:ok, [{"./usr/x", "data"}]} = Tar.read(tar)
+    end
+  end
 end

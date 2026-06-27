@@ -40,6 +40,17 @@ devices are skipped. `.deb` control tars are all regular files — the targeted
 case — and surfacing the rest would mean inventing a richer entry type the spec
 deliberately avoids.
 
+`write/1` *does* emit directory entries (typeflag `5`) via `{:dir, name, mode}`
+tuples, because a `.deb`'s `data.tar` lists an explicit entry per parent dir
+([#1]). The asymmetry with `read/1` (which skips them) is intentional: building a
+`data.tar` needs dir entries, but the read path targets control tars, which have
+none. The tagged-tuple shape was chosen over a `Tar.dir/2` helper or a
+`{name, contents, mode, type}` 4-tuple — it's plain data that composes with
+`Enum.map`, mirrors the bare file tuples, and a directory carries no contents to
+put in a 4-tuple's `contents` slot.
+
+[#1]: https://github.com/jtippett/debkit/issues/1
+
 ## The error vocabulary
 
 NIFs never raise across the BEAM boundary; they return `{:ok, _}` or
