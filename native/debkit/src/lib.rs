@@ -143,31 +143,44 @@ fn ar_write<'a>(env: Env<'a>, members: Vec<(String, Binary)>) -> Result<Binary<'
 // --- tar -------------------------------------------------------------------
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn tar_read<'a>(env: Env<'a>, data: Binary<'a>) -> Result<Vec<(String, Binary<'a>)>, Atom> {
+fn tar_read<'a>(
+    env: Env<'a>,
+    data: Binary<'a>,
+) -> Result<Vec<(String, Binary<'a>, u32, EntryKind)>, Atom> {
     let mut archive = tar::Archive::new(Cursor::new(data.as_slice()));
     let entries = archive.entries().map_err(|_| atoms::corrupt())?;
-    let mut pairs: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut out: Vec<(String, Vec<u8>, u32, EntryKind)> = Vec::new();
 
     for entry in entries {
         let mut entry = entry.map_err(|_| atoms::corrupt())?;
 
-        // Regular files only — directories, symlinks, hardlinks, devices are
-        // skipped (a `.deb` control tar is all regular files).
-        if !entry.header().entry_type().is_file() {
+        // Files and directories only — symlinks, hardlinks and device nodes are
+        // skipped (a `.deb`'s tars don't use them).
+        let entry_type = entry.header().entry_type();
+        let kind = if entry_type.is_file() {
+            EntryKind::File
+        } else if entry_type.is_dir() {
+            EntryKind::Dir
+        } else {
             continue;
+        };
+
+        // Read the raw stored name (`path_bytes`, not `path`) so verbatim names
+        // survive, including a directory's trailing `/` that `Path` would drop.
+        let name = String::from_utf8_lossy(&entry.path_bytes()).into_owned();
+        let mode = entry.header().mode().map_err(|_| atoms::corrupt())?;
+
+        let mut buf = Vec::new();
+        if matches!(kind, EntryKind::File) {
+            entry.read_to_end(&mut buf).map_err(|_| atoms::corrupt())?;
         }
 
-        let name = entry
-            .path()
-            .map_err(|_| atoms::corrupt())?
-            .to_string_lossy()
-            .into_owned();
-        let mut buf = Vec::new();
-        entry.read_to_end(&mut buf).map_err(|_| atoms::corrupt())?;
-        pairs.push((name, buf));
+        out.push((name, buf, mode, kind));
     }
 
-    encode_members(env, pairs)
+    out.into_iter()
+        .map(|(name, bytes, mode, kind)| Ok((name, to_binary(env, &bytes)?, mode, kind)))
+        .collect()
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]

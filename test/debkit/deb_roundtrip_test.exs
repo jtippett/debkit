@@ -8,6 +8,7 @@ defmodule Debkit.DebRoundtripTest do
 
   alias Debkit.Ar
   alias Debkit.Tar
+  alias Debkit.Tar.Entry
 
   for compression <- [:gzip, :xz, :zstd] do
     test "builds and parses a #{compression}-compressed .deb" do
@@ -23,11 +24,17 @@ defmodule Debkit.DebRoundtripTest do
       """
 
       # control.tar.<ext>
-      control_tar = Tar.write!([{"./control", control}])
+      control_tar = Tar.write!([Tar.file("./control", control)])
       control_comp = Debkit.compress!(compression, control_tar)
 
-      # data.tar.<ext> with one file
-      data_tar = Tar.write!([{"./usr/bin/hello", "#!/bin/sh\necho hello\n", 0o755}])
+      # data.tar.<ext> with a dir tree and one file
+      data_tar =
+        Tar.write!([
+          Tar.dir("./usr/", 0o755),
+          Tar.dir("./usr/bin/", 0o755),
+          Tar.file("./usr/bin/hello", "#!/bin/sh\necho hello\n", 0o755)
+        ])
+
       data_comp = Debkit.compress!(compression, data_tar)
 
       # the ar container — exact .deb member order
@@ -46,17 +53,25 @@ defmodule Debkit.DebRoundtripTest do
 
       {_, control_comp_read} = Enum.at(members, 1)
       control_tar_read = Debkit.decompress!(compression, control_comp_read)
-      assert {:ok, [{"./control", ^control}]} = Tar.read(control_tar_read)
+
+      assert {:ok, [%Entry{name: "./control", contents: ^control, type: :file}]} =
+               Tar.read(control_tar_read)
 
       {_, data_comp_read} = Enum.at(members, 2)
       data_tar_read = Debkit.decompress!(compression, data_comp_read)
-      assert {:ok, [{"./usr/bin/hello", "#!/bin/sh\necho hello\n"}]} = Tar.read(data_tar_read)
+
+      assert {:ok,
+              [
+                %Entry{name: "./usr/", type: :dir},
+                %Entry{name: "./usr/bin/", type: :dir},
+                %Entry{name: "./usr/bin/hello", contents: "#!/bin/sh\necho hello\n", type: :file}
+              ]} = Tar.read(data_tar_read)
     end
   end
 
   test "the whole .deb is byte-for-byte reproducible" do
     build = fn ->
-      ctl = Tar.write!([{"./control", "Package: x\n"}])
+      ctl = Tar.write!([Tar.file("./control", "Package: x\n")])
       Ar.write!([{"debian-binary", "2.0\n"}, {"control.tar.gz", Debkit.compress!(:gzip, ctl)}])
     end
 

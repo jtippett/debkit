@@ -6,12 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `Debkit.Tar` entries are now `Debkit.Tar.Entry` structs instead
+  of tuples. The same struct flows through `read/1` and `write/1`, so an archive
+  round-trips through it.
+  - Build entries with the new `Debkit.Tar.file/3` and `Debkit.Tar.dir/2`
+    constructors (replacing the `{name, contents}` / `{name, contents, mode}` and
+    `{:dir, ...}` tuple forms).
+  - `Debkit.Tar.read/1` now returns `Debkit.Tar.Entry` structs and surfaces
+    **directory** entries (with `mode` and `type`) in addition to files; symlinks
+    and device nodes are still skipped.
+
 ### Added
 
-- `Debkit.Tar.write/1` now writes **directory entries** (ustar typeflag `5`) via
-  `{:dir, name}` / `{:dir, name, mode}` tuples, alongside the existing file
-  forms. This is what a `.deb`'s `data.tar` lists for each parent directory.
-  Names are stored verbatim (keep the trailing `/`). ([#1])
+- Directory entries (ustar typeflag `5`) for `.deb` `data.tar` archives, via
+  `Debkit.Tar.dir/2`. Names are stored verbatim (keep the trailing `/`). ([#1])
 
 [#1]: https://github.com/jtippett/debkit/issues/1
 

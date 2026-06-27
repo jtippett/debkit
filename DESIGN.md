@@ -35,19 +35,34 @@ writers) normalises away `.` path components, turning the `.deb`-conventional
 the name round-trips exactly — `dpkg-deb -c` shows `./usr/bin/foo`, not
 `usr/bin/foo`. `read/1` is already verbatim, so write now matches it.
 
-`read/1` returns regular-file entries only; directories, symlinks, hardlinks and
-devices are skipped. `.deb` control tars are all regular files — the targeted
-case — and surfacing the rest would mean inventing a richer entry type the spec
-deliberately avoids.
+## Tar entries are a struct
 
-`write/1` *does* emit directory entries (typeflag `5`) via `{:dir, name, mode}`
-tuples, because a `.deb`'s `data.tar` lists an explicit entry per parent dir
-([#1]). The asymmetry with `read/1` (which skips them) is intentional: building a
-`data.tar` needs dir entries, but the read path targets control tars, which have
-none. The tagged-tuple shape was chosen over a `Tar.dir/2` helper or a
-`{name, contents, mode, type}` 4-tuple — it's plain data that composes with
-`Enum.map`, mirrors the bare file tuples, and a directory carries no contents to
-put in a 4-tuple's `contents` slot.
+`Debkit.Tar` entries are `%Debkit.Tar.Entry{name, contents, mode, type}` — the
+*same* struct produced by `read/1` and accepted by `write/1`, so an archive
+round-trips. We arrived here in two steps, which is the honest way to design a
+struct:
+
+1. **v0.1: tuples.** `{name, contents}` / `{name, contents, mode}` matched the
+   spec and read cleanly for the bulk file case. When directory entries were
+   needed ([#1]), a `{:dir, name, mode}` tagged tuple was the minimal extension —
+   but it left a heterogeneous tuple union, positional overloading (position 1
+   means a binary *or* the `:dir` tag), and a `read`/`write` type mismatch.
+
+2. **v0.2: struct.** Once the real shape was known (name + contents + mode +
+   file/dir type, names verbatim), a struct beat the tuples decisively: one type
+   for both directions, no positional cleverness, pattern-matchable on
+   `%Entry{type: :dir}`, room to grow (symlinks), and `read/1` can now surface
+   directories with their modes for free. Constructors `Tar.file/3` and
+   `Tar.dir/2` keep construction terse, and a custom `Inspect` renders entries as
+   `#Debkit.Tar.Entry<file "./control" 0o644 15B>`.
+
+The lesson: don't reach for a struct until you've *earned* its field list. A
+struct designed before you understand the shape is just a tuple with ceremony;
+designed after, it's hard to beat.
+
+`read/1` surfaces files and directories; symlinks, hardlinks and device nodes are
+skipped (a `.deb`'s tars don't use them). `mode: nil` on an entry means "default
+for the type" (`0o644` file / `0o755` dir), resolved at write time.
 
 [#1]: https://github.com/jtippett/debkit/issues/1
 

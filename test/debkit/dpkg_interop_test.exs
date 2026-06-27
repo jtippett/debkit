@@ -26,12 +26,12 @@ defmodule Debkit.DpkgInteropTest do
       Description: a .deb assembled entirely by Debkit
       """
 
-      control_tar = Tar.write!([{"./control", control}])
+      control_tar = Tar.write!([Tar.file("./control", control)])
 
       data_tar =
         Tar.write!([
-          {"./usr/bin/debkit-demo", "#!/bin/sh\necho hi\n", 0o755},
-          {"./usr/share/doc/debkit-demo/copyright", "MIT\n", 0o644}
+          Tar.file("./usr/bin/debkit-demo", "#!/bin/sh\necho hi\n", 0o755),
+          Tar.file("./usr/share/doc/debkit-demo/copyright", "MIT\n", 0o644)
         ])
 
       deb =
@@ -71,16 +71,17 @@ defmodule Debkit.DpkgInteropTest do
 
       data_tar =
         Tar.write!([
-          {:dir, "./usr/", 0o755},
-          {:dir, "./usr/bin/", 0o755},
-          {:dir, "./etc/", 0o700},
-          {"./usr/bin/debkit-dirs", "#!/bin/sh\n", 0o755}
+          Tar.dir("./usr/", 0o755),
+          Tar.dir("./usr/bin/", 0o755),
+          Tar.dir("./etc/", 0o700),
+          Tar.file("./usr/bin/debkit-dirs", "#!/bin/sh\n", 0o755)
         ])
 
       deb =
         Ar.write!([
           {"debian-binary", "2.0\n"},
-          {"control.tar.gz", Debkit.compress!(:gzip, Tar.write!([{"./control", control}]))},
+          {"control.tar.gz",
+           Debkit.compress!(:gzip, Tar.write!([Tar.file("./control", control)]))},
           {"data.tar.gz", Debkit.compress!(:gzip, data_tar)}
         ])
 
@@ -119,8 +120,8 @@ defmodule Debkit.DpkgInteropTest do
 
           {:ok, entries} = Tar.read(Debkit.decompress!(format(cname), cbytes))
 
-          {_, body} =
-            Enum.find(entries, fn {n, _} ->
+          %{contents: body} =
+            Enum.find(entries, fn %{name: n} ->
               base = Path.basename(n)
               base == "control" and not String.starts_with?(base, "._")
             end)

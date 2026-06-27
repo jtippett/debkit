@@ -74,30 +74,42 @@ breaks `dpkg`).
 
 ### tar
 
+Entries are `Debkit.Tar.Entry` structs — the same struct flows through `read/1`
+and `write/1`, so an archive round-trips. Build them with `Tar.file/3` and
+`Tar.dir/2`:
+
 ```elixir
 tar = Debkit.Tar.write!([
-  {:dir, "./usr/", 0o755},                  # directory entry (ustar typeflag 5)
-  {:dir, "./usr/bin/"},                      # mode defaults to 0o755
-  {"./control", "Package: hello\n"},        # file; mode defaults to 0o644
-  {"./usr/bin/hello", "#!/bin/sh\n", 0o755}
+  Debkit.Tar.dir("./usr/", 0o755),                  # directory (ustar typeflag 5)
+  Debkit.Tar.dir("./usr/bin/"),                      # mode defaults to 0o755
+  Debkit.Tar.file("./control", "Package: hello\n"), # file; mode defaults to 0o644
+  Debkit.Tar.file("./usr/bin/hello", "#!/bin/sh\n", 0o755)
 ])
 
 {:ok, entries} = Debkit.Tar.read(tar)
-# [{"./control", "Package: hello\n"}, {"./usr/bin/hello", "#!/bin/sh\n"}]
+# [#Debkit.Tar.Entry<dir "./usr/" 0o755>,
+#  #Debkit.Tar.Entry<dir "./usr/bin/" 0o755>,
+#  #Debkit.Tar.Entry<file "./control" 0o644 15B>,
+#  #Debkit.Tar.Entry<file "./usr/bin/hello" 0o755 10B>]
 ```
 
-Write either files (`{name, contents}` / `{name, contents, mode}`) or directories
-(`{:dir, name}` / `{:dir, name, mode}`) — a `.deb`'s `data.tar` lists an explicit
-directory entry for each parent dir. Names are stored **verbatim**, including a
-leading `./` and a directory's trailing `/` — unlike most tar writers, which
-normalise `.` components away. `read/1` returns regular-file entries only;
-directories, symlinks and the like are skipped.
+A `.deb`'s `data.tar` lists an explicit directory entry for each parent dir, so
+emit `dir/2` entries before the files they contain. Names are stored
+**verbatim**, including a leading `./` and a directory's trailing `/` — unlike
+most tar writers, which normalise `.` components away. `read/1` returns file and
+directory entries; symlinks and device nodes are skipped.
 
 ### Putting it together
 
 ```elixir
-control_tar = Debkit.Tar.write!([{"./control", control_text}])
-data_tar    = Debkit.Tar.write!([{"./usr/bin/hello", script, 0o755}])
+control_tar = Debkit.Tar.write!([Debkit.Tar.file("./control", control_text)])
+
+data_tar =
+  Debkit.Tar.write!([
+    Debkit.Tar.dir("./usr/", 0o755),
+    Debkit.Tar.dir("./usr/bin/", 0o755),
+    Debkit.Tar.file("./usr/bin/hello", script, 0o755)
+  ])
 
 deb =
   Debkit.Ar.write!([

@@ -56,7 +56,7 @@ defmodule Debkit.MixProject do
       source_url: @source_url,
       source_ref: "v#{@version}",
       groups_for_modules: [
-        Codecs: [Debkit.Ar, Debkit.Tar]
+        Codecs: [Debkit.Ar, Debkit.Tar, Debkit.Tar.Entry]
       ]
     ]
   end
