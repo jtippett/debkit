@@ -1,0 +1,28 @@
+[package]
+name = "debkit"
+version = "0.1.0"
+edition = "2021"
+# The shipped NIF is precompiled (CI builds with stable), so this only constrains
+# the rare from-source consumer build. Keep it recent.
+rust-version = "1.82"
+
+[lib]
+name = "debkit"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.38"
+
+# The four nested .deb formats. All mature, boring crates; this NIF is a thin
+# wrapper with no novel logic. Pinned to a minor line; bump deliberately.
+ar = "0.9"
+tar = "0.4"
+# flate2 default features use the pure-Rust miniz_oxide backend (no C, no zlib
+# system dep) — gzip stays self-contained in the precompiled binary.
+flate2 = "1.0"
+# xz2 builds liblzma from bundled source (lzma-sys) and zstd builds libzstd from
+# bundled source — both link statically into the .so, so there is still no
+# runtime binary dependency. They need a C compiler at *build* time only.
+xz2 = "0.1"
+zstd = "0.13"
