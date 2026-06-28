@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## 0.2.0 - 2026-06-28
+
 ### Changed
 
 - **Breaking:** `Debkit.Tar` entries are now `Debkit.Tar.Entry` structs instead
